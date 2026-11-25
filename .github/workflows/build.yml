@@ -1,72 +1,37 @@
-name: C/C++ CI
+name: Build libsm64 armeabi-v7a
 
 on:
-  push:
-    branches: [ master ]
-  pull_request:
-    branches: [ master ]
+  workflow_dispatch:
 
 jobs:
-  build-linux:
+  build:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
-    - name: install
-      run: sudo apt-get update -y && sudo apt-get install -y build-essential git python3 libsdl2-dev libpulse-dev
-    - name: make
-      run: make
-    - uses: actions/upload-artifact@v4
-      with:
-        name: libsm64-linux
-        path: |
-          dist/libsm64.so
-          dist/debug.map
-  build-macos:
-    runs-on: macos-latest
-    steps:
-    - uses: actions/checkout@v3
-    - name: install
-      run: brew install make mingw-w64 gcc sdl2 pkg-config glew glfw libusb audiofile coreutils
-    - name: make
-      run: gmake -j
-    - name: testCheckDeps
-      run: otool -L dist/libsm64.dylib
-    - uses: actions/upload-artifact@v4
-      with:
-        name: libsm64-mac_os
-        path: dist/libsm64.dylib
-#  build-macos-m1:
-#    runs-on: macos-latest
-#    steps:
-#    - uses: actions/checkout@v3
-#    - name: install
-#      run: brew install make mingw-w64 gcc sdl2 pkg-config glew glfw libusb audiofile coreutils
-#    - name: Setup upterm session
-#      uses: lhotari/action-upterm@v1
-#    - name: make
-#      run: gmake -j M1_CPU=Y
-#    - uses: actions/upload-artifact@v3
-#      with:
-#        name: libsm64-mac_os_m1
-#        path: dist/libsm64.dylib
-  build-windows:
-    runs-on: windows-latest
-    defaults:
-      run:
-        shell: msys2 {0}
-    steps:
-    - uses: actions/checkout@v2
-    - uses: msys2/setup-msys2@v2
-      with:
-        msystem: MINGW64
-        update: true
-        install: git make mingw-w64-x86_64-gcc
-    - name: make
-      run: |
-        make
-    - uses: actions/upload-artifact@v4
-      with:
-        name: sm64-windows
-        path: |
-          dist/sm64.dll
-          dist/debug.map
+      - name: Clonar libsm64-retro64
+        run: git clone --depth 1 https://github.com/Retro64Mod/libsm64-retro64 src_repo
+
+      - name: Compilar para armeabi-v7a (32 bits)
+        working-directory: src_repo
+        run: |
+          TC="$ANDROID_NDK_LATEST_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          chmod +x import-mario-geo.py
+          make lib \
+            CC="$TC/armv7a-linux-androideabi21-clang" \
+            CXX="$TC/armv7a-linux-androideabi21-clang++" \
+            CFLAGS="-g0 -O2 -fPIC -fcommon -DSM64_LIB_EXPORT -DGBI_FLOATS -DVERSION_US -DNO_SEGMENTED_MEMORY -w -Wno-implicit-function-declaration -Wno-int-conversion -Wno-incompatible-pointer-types -Wno-incompatible-function-pointer-types" \
+            LDFLAGS="-lm -shared"
+
+      - name: Verificar que es ARM de 32 bits y ver funciones exportadas
+        working-directory: src_repo
+        run: |
+          file dist/libsm64.so
+          readelf -h dist/libsm64.so | grep -E "Class|Machine"
+          nm -D --defined-only dist/libsm64.so | grep sm64_ | sort -k3
+
+      - name: Subir libsm64.so
+        uses: actions/upload-artifact@v4
+        with:
+          name: libsm64-armeabi-v7a
+          path: |
+            src_repo/dist/libsm64.so
+            src_repo/dist/include/libsm64.h
